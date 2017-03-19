@@ -627,6 +627,51 @@ namespace kt
             return createIndex(row, column, torrents[row]);
     }
 
+    static const QString timeoutFilter1 = i18nc("must be same as in kio4 : kio/global.cpp:316", "Timeout on server\n%1", QString()).replace('\n',"").trimmed();
+    static const QString timeoutFilter2 = i18nc("must be same as in libktorrent : src/tracker/httptracker.cpp:556 src/tracker/udptracker.cpp:364", "Timeout contacting tracker %1", QString()).trimmed();
+
+    inline Qt::GlobalColor highlightTracker(const bt::TrackerInterface* ti)
+    {
+        if (ti && ti->isEnabled() && ti->trackerStatus() == TRACKER_ERROR)
+        {
+            return ( ti->trackerStatusString().contains(timeoutFilter1) ||
+                     ti->trackerStatusString().contains(timeoutFilter2) ) ?  Qt::darkYellow : Qt::darkRed;
+        }
+        return Qt::transparent;
+    }
+
+    Qt::GlobalColor highlightProblem(bt::TorrentInterface* tc)
+    {
+        if (!tc)
+            return Qt::transparent;
+
+        bt::TrackersList *tl = tc->getTrackersList();
+
+        if (!tl)
+            return Qt::darkRed; // no trackers in torrent
+
+        if (!tc->getStats().priv_torrent)
+        {
+            Qt::GlobalColor result_clr = Qt::darkRed;
+            foreach (const bt::TrackerInterface* ti, tl->getTrackers())
+            {
+                Qt::GlobalColor clr = highlightTracker(ti);
+                if (clr > result_clr)
+                {
+                    result_clr = clr; // red < yellow < transparent
+                    if (result_clr == Qt::transparent)
+                        break; // working tracker found
+                }
+            }
+
+            return result_clr;
+        }
+        else
+            return highlightTracker(tl->getCurrentTracker());
+
+        return Qt::transparent;
+    }
+
     QVariant ViewModel::data(const QModelIndex& index, int role) const
     {
         //there is no point checking index.row() < 0 because isValid already does this
@@ -639,6 +684,13 @@ namespace kt
 
         if (role == Qt::ForegroundRole)
         {
+            if (index.column() == NAME)
+            {
+                Qt::GlobalColor clr = highlightProblem(item->tc);
+                if (clr != Qt::transparent)
+                    return QColor(clr);
+            }
+
             return item->color(index.column());
         }
         else if (role == Qt::DisplayRole)
